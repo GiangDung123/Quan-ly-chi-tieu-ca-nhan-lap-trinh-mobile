@@ -3,8 +3,22 @@ import 'package:provider/provider.dart';
 
 import '../providers/transaction_provider.dart';
 
-class StatisticsScreen extends StatelessWidget {
+class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
+
+  @override
+  State<StatisticsScreen> createState() => _StatisticsScreenState();
+}
+
+class _StatisticsScreenState extends State<StatisticsScreen> {
+  late DateTime _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedMonth = DateTime(now.year, now.month);
+  }
 
   bool _isIncome(Map<String, dynamic> transaction) {
     final type = (transaction['type'] ?? '').toString().toLowerCase();
@@ -15,6 +29,40 @@ class StatisticsScreen extends StatelessWidget {
     if (amount == null) return 0;
     if (amount is num) return amount.toDouble();
     return double.tryParse(amount.toString()) ?? 0;
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+
+    if (value is DateTime) return value;
+
+    if (value is String) {
+      final text = value.trim();
+
+      final parsed = DateTime.tryParse(text);
+      if (parsed != null) return parsed;
+
+      final parts = text.split('/');
+      if (parts.length == 3) {
+        final day = int.tryParse(parts[0]);
+        final month = int.tryParse(parts[1]);
+        final year = int.tryParse(parts[2]);
+
+        if (day != null && month != null && year != null) {
+          return DateTime(year, month, day);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  bool _isInSelectedMonth(Map<String, dynamic> transaction) {
+    final date = _parseDate(transaction['date']);
+    if (date == null) return false;
+
+    return date.year == _selectedMonth.year &&
+        date.month == _selectedMonth.month;
   }
 
   Map<String, double> _categoryTotals(
@@ -47,6 +95,34 @@ class StatisticsScreen extends StatelessWidget {
     return value.toStringAsFixed(0);
   }
 
+  String _formatMonthYear(DateTime date) {
+    return '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'Không rõ ngày';
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/'
+        '${date.year}';
+  }
+
+  Future<void> _pickMonth(BuildContext context) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedMonth,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      helpText: 'Chọn tháng cần xem',
+      initialDatePickerMode: DatePickerMode.year,
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedMonth = DateTime(picked.year, picked.month);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final transactionProvider = Provider.of<TransactionProvider>(context);
@@ -57,12 +133,12 @@ class StatisticsScreen extends StatelessWidget {
     double totalExpense = 0;
 
     for (final transaction in transactions) {
-      final amount = _parseAmount(transaction['amount']);
+      final amount = _parseAmount(transaction['amount']).abs();
 
       if (_isIncome(transaction)) {
-        totalIncome += amount.abs();
+        totalIncome += amount;
       } else {
-        totalExpense += amount.abs();
+        totalExpense += amount;
       }
     }
 
@@ -70,6 +146,29 @@ class StatisticsScreen extends StatelessWidget {
 
     final incomeByCategory = _categoryTotals(transactions, true);
     final expenseByCategory = _categoryTotals(transactions, false);
+
+    final monthlyTransactions = transactions.where(_isInSelectedMonth).toList();
+
+    double monthlyIncome = 0;
+    double monthlyExpense = 0;
+
+    for (final transaction in monthlyTransactions) {
+      final amount = _parseAmount(transaction['amount']).abs();
+
+      if (_isIncome(transaction)) {
+        monthlyIncome += amount;
+      } else {
+        monthlyExpense += amount;
+      }
+    }
+
+    final monthlyBalance = monthlyIncome - monthlyExpense;
+
+    final monthlyIncomeByCategory = _categoryTotals(monthlyTransactions, true);
+    final monthlyExpenseByCategory = _categoryTotals(
+      monthlyTransactions,
+      false,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Thống kê'), centerTitle: true),
@@ -168,6 +267,178 @@ class StatisticsScreen extends StatelessWidget {
                               category: entry.key,
                               amount: entry.value,
                               color: Colors.red,
+                            );
+                          }).toList(),
+                        ),
+
+                  const SizedBox(height: 28),
+                  const Divider(),
+                  const SizedBox(height: 16),
+
+                  const Text(
+                    'Thống kê theo tháng',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.calendar_month),
+                      title: const Text('Tháng đang xem'),
+                      subtitle: Text(_formatMonthYear(_selectedMonth)),
+                      trailing: ElevatedButton(
+                        onPressed: () => _pickMonth(context),
+                        child: const Text('Chọn tháng'),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildSummaryCard(
+                          title: 'Thu trong tháng',
+                          value: '${_formatMoney(monthlyIncome)} đ',
+                          icon: Icons.trending_up,
+                          color: Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildSummaryCard(
+                          title: 'Chi trong tháng',
+                          value: '${_formatMoney(monthlyExpense)} đ',
+                          icon: Icons.trending_down,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  _buildSummaryCard(
+                    title: 'Số dư trong tháng',
+                    value: '${_formatMoney(monthlyBalance)} đ',
+                    icon: Icons.savings,
+                    color: monthlyBalance >= 0 ? Colors.blue : Colors.orange,
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  const Text(
+                    'Thu theo danh mục trong tháng',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  monthlyIncomeByCategory.isEmpty
+                      ? const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text('Tháng này chưa có dữ liệu thu nhập'),
+                          ),
+                        )
+                      : Column(
+                          children: monthlyIncomeByCategory.entries.map((
+                            entry,
+                          ) {
+                            return _buildCategoryTile(
+                              category: entry.key,
+                              amount: entry.value,
+                              color: Colors.green,
+                            );
+                          }).toList(),
+                        ),
+
+                  const SizedBox(height: 24),
+
+                  const Text(
+                    'Chi theo danh mục trong tháng',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  monthlyExpenseByCategory.isEmpty
+                      ? const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text('Tháng này chưa có dữ liệu chi tiêu'),
+                          ),
+                        )
+                      : Column(
+                          children: monthlyExpenseByCategory.entries.map((
+                            entry,
+                          ) {
+                            return _buildCategoryTile(
+                              category: entry.key,
+                              amount: entry.value,
+                              color: Colors.red,
+                            );
+                          }).toList(),
+                        ),
+
+                  const SizedBox(height: 24),
+
+                  const Text(
+                    'Danh sách giao dịch trong tháng',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+
+                  monthlyTransactions.isEmpty
+                      ? const Card(
+                          child: Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'Không có giao dịch nào trong tháng này',
+                            ),
+                          ),
+                        )
+                      : Column(
+                          children: monthlyTransactions.map((transaction) {
+                            final isIncome = _isIncome(transaction);
+                            final amount = _parseAmount(
+                              transaction['amount'],
+                            ).abs();
+                            final title = (transaction['title'] ?? '')
+                                .toString();
+                            final category = (transaction['category'] ?? 'Khác')
+                                .toString();
+                            final note = (transaction['note'] ?? '').toString();
+                            final date = _parseDate(transaction['date']);
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor:
+                                      (isIncome ? Colors.green : Colors.red)
+                                          .withOpacity(0.15),
+                                  child: Icon(
+                                    isIncome
+                                        ? Icons.arrow_downward
+                                        : Icons.arrow_upward,
+                                    color: isIncome ? Colors.green : Colors.red,
+                                  ),
+                                ),
+                                title: Text(title.isEmpty ? category : title),
+                                subtitle: Text(
+                                  note.isEmpty
+                                      ? '${category} - ${_formatDate(date)}'
+                                      : '$category\n$note\n${_formatDate(date)}',
+                                ),
+                                isThreeLine: true,
+                                trailing: Text(
+                                  '${_formatMoney(amount)} đ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: isIncome ? Colors.green : Colors.red,
+                                  ),
+                                ),
+                              ),
                             );
                           }).toList(),
                         ),
