@@ -7,13 +7,27 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:flutter_application_2/main.dart';
+import 'package:flutter_application_2/providers/transaction_provider.dart';
+import 'package:flutter_application_2/providers/budget_provider.dart';
+import 'package:flutter_application_2/providers/category_provider.dart';
+import 'package:flutter_application_2/providers/theme_provider.dart';
+import 'package:flutter_application_2/providers/profile_provider.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(
+      MyApp(
+        transactionProvider: TransactionProvider(),
+        budgetProvider: BudgetProvider(),
+        categoryProvider: CategoryProvider(),
+        themeProvider: ThemeProvider(),
+        profileProvider: ProfileProvider(),
+      ),
+    );
 
     // Verify that our counter starts at 0.
     expect(find.text('0'), findsOneWidget);
